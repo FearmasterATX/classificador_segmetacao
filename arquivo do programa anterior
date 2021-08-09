@@ -1,0 +1,120 @@
+import cv2 as cv
+import numpy as np
+import pandas as pd
+# Importando o padronizador:
+from sklearn.preprocessing import StandardScaler
+# Importando o classificador:
+from sklearn.svm import SVC
+from joblib import load
+
+
+# função mostrar para quando precisarmos ver a imgem
+def mostrar(imagem):
+    cv.namedWindow('janela', cv.WINDOW_NORMAL)
+    cv.imshow('janela', imagem)
+    cv.waitKey()
+    cv.destroyAllWindows()
+
+
+# Variaveis
+# Vetores que guardarão as informações
+(primeiraDMean, primeiraDVar, segundaDMean, segundaDVar,
+ terceiraDMean, terceiraDVar) = ([[], [], [], []] for i in np.arange(0, 6))
+# vetores necessarios para o algoritmo
+dataframe_da_imgem = [[], [], [], []]  # dataframe a ser classificado
+kernel = np.ones((13, 13), np.uint8)  # necessário para filtro morfológico
+# variaveis para nomenclatura
+primeiroD = ['Luminosity', 'Hue', 'Y', 'Blue']
+segundoD = ['Chromatic Coordinate a', 'Saturation', 'Cr', 'Green']
+terceiroD = ['Chromatic Coordinate b', 'Value', 'Cb', 'Red']
+nomes_dos_formatos = ['Lab', 'HSV', 'YCrCb', 'RGB']
+ordem = ['Luminosity M', 'Luminosity Var', 'Chromatic Coordinate a M', 'Chromatic Coordinate a Var',
+         'Chromatic Coordinate b M', 'Chromatic Coordinate b Var', 'Hue M', 'Hue Var', 'Saturation M',
+         'Saturation Var', 'Value M', 'Value Var', 'Y M', 'Y Var', 'Cr M', 'Cr Var', 'Cb M', 'Cb Var', 'Blue M',
+         'Blue Var', 'Green M', 'Green Var', 'Red M', 'Red Var']
+
+"""
+###################################segmentacao banco 2##################################################################
+"""
+nome = input('Digite o nome da imagem contida no diretório: ')
+img = cv.imread(f'{nome}', 1)
+img = img[1300:2500, 1500:3200]  # recote padrão já pré definido
+img2 = cv.cvtColor(img, cv.COLOR_BGR2Lab)
+(L, Ca, Cb) = cv.split(img2)  # dividir canal de cores
+Cb = cv.blur(Cb, (11, 11))  # blur
+opening = cv.morphologyEx(Cb, cv.MORPH_CLOSE, kernel)  # filtro morfológico
+t_usado, t_img = cv.threshold(opening, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU)  # otsu aplicado na imagem
+borda = cv.Canny(t_img, 100, 200)
+imgcon, contors, hiera = cv.findContours(borda, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE)  # pegamos só os contornos
+cnt = contors[0]  # contor da primenira posição
+x, y, w, h = cv.boundingRect(cnt)
+# cv.rectangle(img, (x, y), (x + w, y + h), (0, 0, 0), 2)  # retangulo aproximado a partir dos contornos
+roi = img[y + 20:y + h - 20, x + 20:x + w - 20]  # cortador do ROI
+"""
+##################################extracao de caracteristica banco 2####################################################
+"""
+cores = [cv.COLOR_BGR2Lab, cv.COLOR_BGR2HSV, cv.COLOR_BGR2YCrCb, 1]
+for formatos in range(4):
+    # os valores de média e variancia de cada canal de cor é calculado e salvo em um vetor
+    dimensoes = cv.cvtColor(roi, cores[formatos])  # os flags daqui tem que ser BGR2algo
+    (primeiro, segundo, terceiro) = cv.split(dimensoes)
+    # média
+    primeiraDMean[formatos].append(np.mean(primeiro))
+    segundaDMean[formatos].append(np.mean(segundo))
+    terceiraDMean[formatos].append(np.mean(terceiro))
+    # variância
+    primeiraDVar[formatos].append(np.var(primeiro))
+    segundaDVar[formatos].append(np.var(segundo))
+    terceiraDVar[formatos].append(np.var(terceiro))
+# salvando dados em um dataframe
+vetor = [[]]
+for a in range(4):
+    vetor[0].extend(np.array([primeiraDMean, primeiraDVar, segundaDMean,
+                              segundaDVar, terceiraDMean, terceiraDVar]).reshape((6, 4))[:, a])
+
+"""
+##############################segmentacao banco 1#######################################################################
+"""
+
+nome = input('Digite o nome da imagem contida no diretório: ')
+img = cv.imread(f'{nome}', 1)
+img = img[1900:2300, 1000:1400]  # recote padrão já pré definido
+(azul, verde, vermelho) = cv.split(img)  # dividir canal de cores
+azul = cv.blur(azul, (11, 11))  # blur
+# mostrar(azul)
+opening = cv.morphologyEx(azul, cv.MORPH_CLOSE, kernel)  # filtro morfológico
+# mostrar(azul)
+t_usado, t_img = cv.threshold(opening, 0, 255, cv.THRESH_BINARY + cv.THRESH_OTSU)  # otsu aplicado na imagem binária
+# mostrar(t_img)
+borda = cv.Canny(t_img, 100, 200)
+imgcon, contors, hiera = cv.findContours(borda, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE)  # pegamos só os contornos
+cnt = contors[0]  # contor da primenira posição
+x, y, w, h = cv.boundingRect(cnt)
+cv.rectangle(img, (x, y), (x + w, y + h), (0, 0, 0), 2)  # retangulo aproximado a partir dos contornos
+roi = img[y + 20:y + h - 20, x + 20:x + w - 20]  # cortador do ROI
+"""
+###########################extracao de caracteristica banco 1###########################################################
+"""
+(primeiro, segundo, terceiro) = cv.split(roi)
+primeiraDMean.append(np.mean(primeiro))
+segundaDMean.append(np.mean(segundo))
+terceiraDMean.append(np.mean(terceiro))
+# variância
+primeiraDVar.append(np.var(primeiro))
+segundaDVar.append(np.var(segundo))
+terceiraDVar.append(np.var(terceiro))
+vetor.extend(np.array([primeiraDMean, primeiraDVar, segundaDMean, segundaDVar, terceiraDMean, terceiraDVar]))
+"""
+########################### classificação para o banco 1 ###########################################################
+"""
+scaler_B1 = load('scaler_B1.joblib') # scaler do banco 1
+clf1 = load('clf_B1.joblib') # classificador 
+v = scaler_B1.transform(vetor)
+classe1 = clf1.predict(v) # classificação 
+"""
+########################### classificação para o banco 2  ###########################################################
+"""
+scaler_B2 = load('scaler_B2.joblib') # scaler do banco 2
+clf2 = load('clf_B2.joblib') # classificador 
+v = scaler_B2.transform(vetor)
+classe1 = clf2.predict(v) # classificação 
